@@ -24,7 +24,9 @@ from .. import commands
 from dnf.i18n import _
 import calendar
 import dnf.cli
+import dnf.conf
 import dnf.exceptions
+import dnf.logging
 import dnf.pycomp
 import dnf.util
 import re
@@ -34,7 +36,50 @@ import time
 
 logger = logging.getLogger("dnf")
 
+MD_TIMER_SYNC_DEPRECATED = _("'metadata_timer_sync' is deprecated. "
+                             "Please setup dnf-makecache.timer directly instead.")
 SYSTEMD_TIMER_NAME = 'dnf-makecache.timer'
+
+_MSGS = {
+    'battery' : _('Metadata timer caching disabled when running on a battery.')
+}
+
+
+def decide_timer_period(timer, on_ac_power, since_last, next_systemd_run,
+                        timer_sync):
+    if timer and on_ac_power is False:
+        return ('battery', 0)
+
+    period = next_systemd_run
+    if next_systemd_run is None:
+        period = timer_sync
+    else if timer_sync != dnf.conf.Conf.metadata_timer_sync.default:
+        dnf.logging.depr(MD_TIMER_SYNC_DEPRECATED)
+        msg = 'metadata_timer_sync in config is deprec dnf.Base.select_group() is deprecated. Use group_install()."
+        dnf.logging.depr(msg)
+
+        
+        period 
+    if next_systemd_run is not None:
+        if 
+
+        
+    if period <= 0:
+        msg = _('Metadata timer caching disabled.')
+        logger.info(msg)
+        return False
+
+    since_last_makecache = since_last
+    if since_last_makecache is not None and since_last_makecache < period:
+        logger.info(_('Metadata cache refreshed recently.'))
+        return False
+
+def next_systemd_timer_in():
+    list_timers = systemd_list_timers()
+    if list_timers is None:
+        return None
+    next_at = parse_systemd_timers(list_timers)
+    return next_at - time.time()
 
 
 def parse_systemd_timers(timers_str):
@@ -53,14 +98,6 @@ def parse_systemd_timers(timers_str):
     matches = (parse_time(time) for (time, name) in map(extract, lines[1:])
                if name == SYSTEMD_TIMER_NAME)
     return dnf.util.first(matches)
-
-
-def next_systemd_timer_in():
-    list_timers = systemd_list_timers()
-    if list_timers is None:
-        return None
-    next_at = parse_systemd_timers(list_timers)
-    return next_at - time.time()
 
 
 def parse_time(time_str):
@@ -92,25 +129,16 @@ class MakeCacheCommand(commands.Command):
         commands.checkEnabledRepo(self.base)
 
     def run(self, extcmds):
-        msg = _("Making cache files for all metadata files.")
-        logger.debug(msg)
-        period = self.base.conf.metadata_timer_sync
+        logger.debug('Running makecache.')
         timer = 'timer' == dnf.util.first(extcmds)
         persistor = self.base._persistor
+        error, period = decide_timer_period(
+            timer, dnf.util.on_ac_power(), persistor.since_last_makecache(),
+            next_systemd_timer_in())
+        if error:
+            logger.info(_MSGS[error])
+            return False
         if timer:
-            if dnf.util.on_ac_power() is False:
-                msg = _('Metadata timer caching disabled '
-                        'when running on a battery.')
-                logger.info(msg)
-                return False
-            if period <= 0:
-                msg = _('Metadata timer caching disabled.')
-                logger.info(msg)
-                return False
-            since_last_makecache = persistor.since_last_makecache()
-            if since_last_makecache is not None and since_last_makecache < period:
-                logger.info(_('Metadata cache refreshed recently.'))
-                return False
             self.base.repos.all().max_mirror_tries = 1
 
         for r in self.base.repos.iter_enabled():
