@@ -9,7 +9,7 @@
 # This program is distributed in the hope that it will be useful, but WITHOUT
 # ANY WARRANTY expressed or implied, including the implied warranties of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General
-# Public License for more details.  You should have received a copy of the
+# Public License for more details.  You should have roseceived a copy of the
 # GNU General Public License along with this program; if not, write to the
 # Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301, USA.  Any Red Hat trademarks that are incorporated in the
@@ -22,13 +22,59 @@ from __future__ import absolute_import
 from __future__ import unicode_literals
 from .. import commands
 from dnf.i18n import _
-
+import calendar
 import dnf.cli
 import dnf.exceptions
+import dnf.pycomp
 import dnf.util
+import re
+import subprocess
 import logging
+import time
 
 logger = logging.getLogger("dnf")
+
+SYSTEMD_TIMER_NAME = 'dnf-makecache.timer'
+
+
+def parse_systemd_timers(timers_str):
+    lines = timers_str.splitlines()
+    header = lines[0]
+    match = re.search(r'(\bNEXT\W*\b).*(\bUNIT\W*\b)', header)
+    time_from = match.start(1)
+    time_to = match.end(1)
+    unit_from = match.start(2)
+    unit_to = match.end(2)
+
+    def extract(line):
+        return (line[time_from:time_to].rstrip(),
+                line[unit_from:unit_to].rstrip())
+
+    matches = (parse_time(time) for (time, name) in map(extract, lines[1:])
+               if name == SYSTEMD_TIMER_NAME)
+    return dnf.util.first(matches)
+
+
+def next_systemd_timer_in():
+    list_timers = systemd_list_timers()
+    if list_timers is None:
+        return None
+    next_at = parse_systemd_timers(list_timers)
+    return next_at - time.time()
+
+
+def parse_time(time_str):
+    time_tuple = time.strptime(time_str, '%a %Y-%m-%d %H:%M:%S %Z')
+    return calendar.timegm(time_tuple)
+
+
+def systemd_list_timers():
+    proc = subprocess.Popen(('systemctl', 'list-timers'), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
+    list_timers = proc.communicate()[0]
+    if proc.returncode == 0:
+        return list_timers
+    return None
 
 
 class MakeCacheCommand(commands.Command):

@@ -22,6 +22,21 @@ import dnf.cli.commands.makecache as makecache
 import dnf.pycomp
 
 
+TIMERS_STR = """\
+NEXT                          LEFT       LAST                          PASSED    UNIT                         ACTIVATES
+Thu 2014-09-25 09:52:38 CEST  23h left   Wed 2014-09-24 09:52:38 CEST  35min ago systemd-tmpfiles-clean.timer systemd-tmpfiles-clean.service
+Wed 2014-09-24 10:48:02 CEST  19min left Wed 2014-09-24 09:47:58 CEST  40min ago dnf-makecache.timer          dnf-makecache.service
+
+2 timers listed.
+Pass --all to see loaded but inactive timers, too.
+"""
+
+
+class MakeCacheFunctionsTest(support.TestCase):
+    def test_parse_systemd_timers(self):
+        self.assertEqual(makecache.parse_systemd_timers(TIMERS_STR), 1411555682)
+
+
 class MakeCacheCommandTest(support.TestCase):
     def setUp(self):
         self.base = support.MockBase()
